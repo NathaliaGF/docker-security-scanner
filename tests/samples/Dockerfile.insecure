@@ -1,0 +1,36 @@
+# ⚠️  INTENTIONALLY INSECURE — for scanner testing only.
+# This file deliberately violates every DF0xx rule.
+
+# DF002 + DF010 — end-of-life base image
+FROM ubuntu:16.04
+
+# DF003 — hardcoded credentials in ENV
+ENV PASSWORD=supersecret123
+ENV SECRET_KEY=mysupersecretkey
+ARG API_KEY=sk-prod-1234567890abcdef
+
+# DF007 — more than 3 consecutive RUN instructions (each creates a layer)
+RUN apt-get update
+RUN apt-get install -y curl
+RUN apt-get install -y python3
+RUN apt-get install -y python3-pip
+
+# DF004 — apt-get install without --no-install-recommends
+RUN apt-get install -y wget openssh-server
+
+# DF006 — piping curl output directly into bash
+RUN curl -fsSL https://get.docker.com | bash
+
+# DF005 — COPY . . without a .dockerignore
+COPY . .
+
+# DF009 — private keys and certificates baked into the image
+COPY id_rsa /root/.ssh/id_rsa
+COPY server.pem /etc/ssl/server.pem
+
+# DF008 — sensitive ports: SSH and RDP
+EXPOSE 22
+EXPOSE 3389
+EXPOSE 80
+
+# DF001 — no USER instruction; image runs as root

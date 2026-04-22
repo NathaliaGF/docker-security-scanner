@@ -1,0 +1,48 @@
+# ✅ SECURE example — demonstrates best practices for docker-compose hardening.
+
+version: "3.8"
+
+services:
+
+  api:
+    image: python:3.12-slim        # pinned version — no latest
+    user: "1000:1000"             # non-root user
+    ports:
+      - "8080:5000"               # non-privileged host port
+    environment:
+      - DATABASE_URL=postgres://user@db/myapp   # no secret value
+      - APP_ENV=production
+    volumes:
+      - app_data:/app/data        # named volume, no dangerous host paths
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    mem_limit: 512m
+    cpus: "0.5"
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE           # only the specific capability needed
+
+  db:
+    image: postgres:16.2           # pinned version
+    user: "999:999"
+    environment:
+      - POSTGRES_DB=myapp          # no passwords in plain text
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    mem_limit: 1g
+    cpus: "1.0"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  app_data:
+  db_data:

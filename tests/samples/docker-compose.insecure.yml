@@ -1,0 +1,31 @@
+# ⚠️  INTENTIONALLY INSECURE — for scanner testing only.
+# This file deliberately violates every DC0xx rule.
+
+version: "3.8"
+
+services:
+
+  api:
+    image: python:latest          # DC003 — latest tag
+    user: root                    # DC001 — explicit root user
+    ports:
+      - "80:5000"                 # DC002 — privileged host port
+    environment:
+      - DATABASE_URL=postgres://user:pass@db:5432/mydb
+      - SECRET_KEY=supersecret123     # DC005 — plaintext secret
+      - API_KEY=sk-prod-abcdef12345   # DC005 — plaintext API key
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock  # DC004 — docker socket
+    privileged: true              # DC007 — privileged container
+    restart: always               # DC006 — no healthcheck defined
+    cap_add:                      # DC010 — dangerous capability
+      - SYS_ADMIN
+    # ← No mem_limit or cpus     # DC009 — no resource limits
+
+  db:
+    image: postgres               # DC003 — no tag (implies latest)
+    environment:
+      - POSTGRES_PASSWORD=admin123  # DC005 — plaintext password
+    network_mode: host            # DC008 — host network mode
+    # ← No user directive        # DC001 — no user set
+    # ← No mem_limit or cpus     # DC009 — no resource limits
