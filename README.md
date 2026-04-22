@@ -1,118 +1,118 @@
 # Docker Security Scanner
 
 ![Python](https://img.shields.io/badge/Python-3.10%2B-blue?logo=python&logoColor=white)
-![Security Tool](https://img.shields.io/badge/Security-Tool-red?logo=shield&logoColor=white)
-![License](https://img.shields.io/badge/License-MIT-green?logoColor=white)
-![Tests](https://img.shields.io/badge/Tests-105%20passing-brightgreen)
+![Security Tool](https://img.shields.io/badge/Segurança-Ferramenta-red?logo=shield&logoColor=white)
+![Licença](https://img.shields.io/badge/Licença-MIT-green?logoColor=white)
+![Testes](https://img.shields.io/badge/Testes-105%20passando-brightgreen)
 
-A lightweight CLI tool that statically analyses `docker-compose.yml` files and `Dockerfile`s for security misconfigurations, producing colour-coded terminal reports or machine-readable JSON output.
+Uma ferramenta CLI leve que analisa estaticamente arquivos `docker-compose.yml` e `Dockerfile` em busca de más práticas de segurança, gerando relatórios coloridos no terminal ou saída JSON para integração com pipelines.
 
-Docker Security Scanner implements 20 hand-crafted rules (10 per file type) that cover the most impactful container security mistakes: running as root, baking secrets into images, exposing privileged ports, mounting the Docker socket, using end-of-life base images, and more. It requires no Docker daemon, no internet access, and no heavy frameworks — just Python and two small dependencies.
+O Docker Security Scanner implementa 20 regras (10 por tipo de arquivo) cobrindo os erros de segurança mais impactantes em containers: rodar como root, colocar segredos dentro da imagem, expor portas privilegiadas, montar o socket do Docker, usar imagens base sem suporte, entre outros. Não precisa de Docker rodando, não acessa a internet e não usa frameworks pesados — só Python e duas dependências pequenas.
 
 ---
 
-## Installation
+## Instalação
 
 ```bash
-git clone https://github.com/your-username/docker-security-scanner.git
+git clone https://github.com/NathaliaGF/docker-security-scanner.git
 cd docker-security-scanner
 pip install -r requirements.txt
 ```
 
-Python 3.10 or higher is required.
+Requer Python 3.10 ou superior.
 
 ---
 
-## Usage
+## Como usar
 
-### Scan a single file
+### Analisar um arquivo específico
 
 ```bash
 python main.py --file docker-compose.yml
-python main.py --file path/to/Dockerfile
+python main.py --file caminho/para/Dockerfile
 ```
 
-### Scan an entire project directory (recursive)
+### Analisar um diretório inteiro (recursivo)
 
 ```bash
-python main.py --dir ./my-project
+python main.py --dir ./meu-projeto
 ```
 
-### Filter by severity
+### Filtrar por severidade
 
 ```bash
-# Show only HIGH-severity findings
+# Exibir apenas achados críticos
 python main.py --file docker-compose.yml --severity HIGH
 ```
 
-### Export as JSON (for CI pipelines, dashboards, etc.)
+### Exportar como JSON (para pipelines, dashboards, etc.)
 
 ```bash
 python main.py --file docker-compose.yml --output json
-python main.py --dir ./my-project --output json > report.json
+python main.py --dir ./meu-projeto --output json > relatorio.json
 ```
 
-### CI/CD integration
+### Integração com CI/CD
 
-The scanner exits with code `1` when any **HIGH**-severity finding is present, and `0` otherwise. This lets you block pipelines on critical issues:
+O scanner encerra com código `1` quando há qualquer achado **HIGH**, e `0` caso contrário. Isso permite bloquear pipelines em problemas críticos:
 
 ```yaml
-# GitHub Actions example
+# Exemplo GitHub Actions
 - name: Docker Security Scan
   run: python main.py --dir . --severity HIGH
 ```
 
 ---
 
-## Checks implemented
+## Checks implementados
 
 ### docker-compose.yml
 
-| ID     | Severity | Description                                               |
-|--------|----------|-----------------------------------------------------------|
-| DC001  | HIGH     | Container running as root (no `user:` or `user: root`)   |
-| DC002  | HIGH     | Privileged host port exposed (< 1024)                     |
-| DC003  | MEDIUM   | Image using `latest` tag or no tag                        |
-| DC004  | HIGH     | Sensitive volume mounted (`/`, `/etc`, docker socket)     |
-| DC005  | MEDIUM   | Plaintext secret in environment variable                  |
-| DC006  | LOW      | `restart: always` without a health check                  |
-| DC007  | HIGH     | `privileged: true` enabled                                |
-| DC008  | MEDIUM   | Host network mode (`network_mode: host`)                  |
-| DC009  | LOW      | No CPU or memory limits defined                           |
-| DC010  | MEDIUM   | Dangerous Linux capabilities added (`SYS_ADMIN`, `ALL`…) |
+| ID     | Severidade | Descrição                                                        |
+|--------|------------|------------------------------------------------------------------|
+| DC001  | HIGH       | Container rodando como root (sem `user:` ou `user: root`)        |
+| DC002  | HIGH       | Porta privilegiada exposta no host (< 1024)                      |
+| DC003  | MEDIUM     | Imagem usando tag `latest` ou sem tag                            |
+| DC004  | HIGH       | Volume sensível montado (`/`, `/etc`, socket do Docker)          |
+| DC005  | MEDIUM     | Segredo em texto plano em variável de ambiente                   |
+| DC006  | LOW        | `restart: always` sem health check definido                      |
+| DC007  | HIGH       | `privileged: true` habilitado                                    |
+| DC008  | MEDIUM     | Modo de rede host (`network_mode: host`)                         |
+| DC009  | LOW        | Sem limites de CPU ou memória definidos                          |
+| DC010  | MEDIUM     | Capabilities Linux perigosas adicionadas (`SYS_ADMIN`, `ALL`…)  |
 
 ### Dockerfile
 
-| ID     | Severity | Description                                               |
-|--------|----------|-----------------------------------------------------------|
-| DF001  | HIGH     | `USER root` explicit or no `USER` instruction             |
-| DF002  | MEDIUM   | Base image using `latest` tag or no tag                   |
-| DF003  | HIGH     | Hardcoded credentials in `ENV` or `ARG`                   |
-| DF004  | MEDIUM   | `apt-get install` without `--no-install-recommends`       |
-| DF005  | LOW      | `COPY . .` without a `.dockerignore` file                 |
-| DF006  | MEDIUM   | Remote script piped to shell (`curl \| bash`)              |
-| DF007  | LOW      | More than 3 consecutive `RUN` instructions                |
-| DF008  | MEDIUM   | Sensitive port exposed via `EXPOSE` (22, 23, 3389)        |
-| DF009  | HIGH     | Private key or TLS certificate copied into image          |
-| DF010  | LOW      | End-of-life base image (`ubuntu:16.04`, `debian:8`…)      |
+| ID     | Severidade | Descrição                                                        |
+|--------|------------|------------------------------------------------------------------|
+| DF001  | HIGH       | `USER root` explícito ou ausência de instrução `USER`            |
+| DF002  | MEDIUM     | Imagem base usando tag `latest` ou sem tag                       |
+| DF003  | HIGH       | Credenciais hardcoded em `ENV` ou `ARG`                          |
+| DF004  | MEDIUM     | `apt-get install` sem `--no-install-recommends`                  |
+| DF005  | LOW        | `COPY . .` sem arquivo `.dockerignore`                           |
+| DF006  | MEDIUM     | Script remoto executado via pipe (`curl \| bash`)                 |
+| DF007  | LOW        | Mais de 3 instruções `RUN` consecutivas                          |
+| DF008  | MEDIUM     | Porta sensível exposta via `EXPOSE` (22, 23, 3389)               |
+| DF009  | HIGH       | Chave privada ou certificado TLS copiado para dentro da imagem   |
+| DF010  | LOW        | Imagem base sem suporte (`ubuntu:16.04`, `debian:8`…)            |
 
 ---
 
-## Security score
+## Score de segurança
 
-Every scan produces a score from **0 to 100**:
+Cada análise gera uma pontuação de **0 a 100**:
 
-| Severity | Deduction per finding |
-|----------|-----------------------|
-| HIGH     | −15 points            |
-| MEDIUM   | −7 points             |
-| LOW      | −2 points             |
+| Severidade | Dedução por achado |
+|------------|--------------------|
+| HIGH       | −15 pontos         |
+| MEDIUM     | −7 pontos          |
+| LOW        | −2 pontos          |
 
-The score is calculated against the full finding list regardless of any `--severity` filter applied to the displayed output.
+O score é calculado sobre a lista completa de achados, independente do filtro `--severity` aplicado na exibição.
 
 ---
 
-## Example output
+## Exemplo de saída
 
 ```
 ╔══════════════════════════════════════════════════════════╗
@@ -122,27 +122,27 @@ The score is calculated against the full finding list regardless of any `--sever
 📄 Arquivo: tests/samples/docker-compose.insecure.yml
 ──────────────────────────────────────────────────────────
 
-🔴 [HIGH  ] DC007 — `privileged: true` enabled
+🔴 [HIGH  ] DC007 — `privileged: true` habilitado
             Serviço: api
             Linha:   19
-            Detalhe: A privileged container has full access to the host kernel, all devices,
-                     and host namespaces — effectively root on the host machine.
-            Fix:     Remove `privileged: true` and use `cap_add` with only the specific
-                     capabilities the service actually needs.
+            Detalhe: Um container privilegiado tem acesso total ao kernel do host,
+                     todos os dispositivos e namespaces — equivalente a root no host.
+            Fix:     Remova `privileged: true` e use `cap_add` apenas com as
+                     capabilities estritamente necessárias.
 
-🟡 [MEDIUM] DC003 — Image with `latest` tag (or no tag)
+🟡 [MEDIUM] DC003 — Imagem com tag `latest` (ou sem tag)
             Serviço: db
             Linha:   26
-            Detalhe: Using `latest` makes builds non-reproducible: upstream updates can
-                     silently introduce breaking changes or new vulnerabilities.
-            Fix:     Pin to a specific version, e.g. `postgres:16.2` or use an image digest.
+            Detalhe: Usar `latest` torna as builds não reproduzíveis: atualizações
+                     upstream podem introduzir breaking changes sem aviso.
+            Fix:     Fixe uma versão específica, ex: `postgres:16.2`.
 
-🔵 [LOW   ] DC009 — No CPU or memory limits defined
+🔵 [LOW   ] DC009 — Sem limites de CPU ou memória
             Serviço: api
             Linha:   8
-            Detalhe: Without `mem_limit`/`cpus`, a misbehaving container can exhaust all
-                     host resources, causing a denial-of-service.
-            Fix:     Set `mem_limit` and `cpus` at the service level.
+            Detalhe: Sem `mem_limit`/`cpus`, um container com problema pode
+                     esgotar todos os recursos do host (DoS).
+            Fix:     Defina `mem_limit` e `cpus` no serviço.
 
 ──────────────────────────────────────────────────────────
 RESUMO: 14 achados  |  🔴 HIGH: 5  |  🟡 MEDIUM: 6  |  🔵 LOW: 3
@@ -150,7 +150,7 @@ Score de segurança: 0/100
 ──────────────────────────────────────────────────────────
 ```
 
-### JSON output (`--output json`)
+### Saída JSON (`--output json`)
 
 ```json
 {
@@ -161,9 +161,9 @@ Score de segurança: 0/100
     {
       "id": "DC007",
       "severity": "HIGH",
-      "description": "`privileged: true` enabled",
-      "detail": "A privileged container has full access to the host kernel...",
-      "fix": "Remove `privileged: true` and use `cap_add` with only the specific capabilities required.",
+      "description": "`privileged: true` habilitado",
+      "detail": "Um container privilegiado tem acesso total ao kernel do host...",
+      "fix": "Remova `privileged: true` e use `cap_add` apenas com as capabilities necessárias.",
       "service": "api",
       "line": 12
     }
@@ -178,26 +178,26 @@ Score de segurança: 0/100
 
 ---
 
-## Running the tests
+## Rodando os testes
 
 ```bash
 pytest tests/ -v
 ```
 
-The test suite contains **105 tests** — at least one positive and one negative test case per check, plus integration tests against the sample files in `tests/samples/`.
+A suíte contém **105 testes** — pelo menos um caso positivo e um negativo por check, mais testes de integração contra os arquivos de exemplo em `tests/samples/`.
 
 ---
 
 ## Roadmap
 
-- **Remote image scanning** — pull image metadata via the Docker API and scan layer history for baked secrets and vulnerable base images.
-- **CI/CD integrations** — native GitHub Actions action and GitLab CI template; SARIF output format for GitHub Code Scanning.
-- **Kubernetes manifest support** — extend checks to `Pod`, `Deployment`, and `DaemonSet` specs (equivalent rules for `securityContext`, `hostNetwork`, `privileged`, etc.).
-- **Custom rule engine** — allow teams to define project-specific rules in YAML and load them at runtime.
-- **SBOM integration** — cross-reference base image layers against CVE databases (Trivy, Grype) for vulnerability counts alongside config findings.
+- **Scan de imagens remotas** — buscar metadados via Docker API e analisar o histórico de camadas em busca de segredos e imagens base vulneráveis.
+- **Integrações CI/CD** — action nativa para GitHub Actions e template para GitLab CI; saída no formato SARIF para o GitHub Code Scanning.
+- **Suporte a manifests Kubernetes** — estender os checks para `Pod`, `Deployment` e `DaemonSet` (regras equivalentes para `securityContext`, `hostNetwork`, `privileged`, etc.).
+- **Motor de regras customizadas** — permitir que times definam regras específicas do projeto em YAML e as carreguem em tempo de execução.
+- **Integração com SBOM** — cruzar as camadas da imagem base com bancos de CVEs (Trivy, Grype) para incluir contagem de vulnerabilidades junto aos achados de configuração.
 
 ---
 
-## License
+## Licença
 
-MIT — see [LICENSE](LICENSE) for details.
+MIT — consulte o arquivo [LICENSE](LICENSE) para detalhes.
