@@ -1,3 +1,7 @@
+"""dockerscan: static security scanner for Dockerfiles and docker-compose files."""
+
+__version__ = "1.0.0"
+
 from dataclasses import dataclass
 from typing import Optional
 

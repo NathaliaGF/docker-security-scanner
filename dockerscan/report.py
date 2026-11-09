@@ -6,9 +6,11 @@ import json
 from typing import Optional
 
 from . import Finding
+from .references import cis_reference
 
 try:
-    from colorama import Fore, Style, init as _colorama_init
+    from colorama import Fore, Style
+    from colorama import init as _colorama_init
     _colorama_init(autoreset=True)
     _C_HIGH   = Fore.RED
     _C_MEDIUM = Fore.YELLOW
@@ -62,9 +64,9 @@ def print_report(
 
     print("─" * 58)
     total = len(findings)
-    h, m, l = summary["HIGH"], summary["MEDIUM"], summary["LOW"]
+    high, med, low = summary["HIGH"], summary["MEDIUM"], summary["LOW"]
     print(f"RESUMO: {total} achado{'s' if total != 1 else ''}  |  "
-          f"🔴 HIGH: {h}  |  🟡 MEDIUM: {m}  |  🔵 LOW: {l}")
+          f"🔴 HIGH: {high}  |  🟡 MEDIUM: {med}  |  🔵 LOW: {low}")
     print(f"Score de segurança: {score}/100")
     print("─" * 58)
     print()
@@ -89,6 +91,9 @@ def export_json(
             "detail":      f.detail,
             "fix":         f.fix,
         }
+        cis = cis_reference(f.rule_id)
+        if cis:
+            entry["reference"] = cis
         if f.service is not None:
             entry["service"] = f.service
         if f.line is not None:
@@ -145,4 +150,17 @@ def _print_finding(f: Finding) -> None:
         print(f"            Linha:   {f.line}")
     print(f"            Detalhe: {f.detail}")
     print(f"            Fix:     {f.fix}")
+    cis = cis_reference(f.rule_id)
+    if cis:
+        print(f"            Ref:     {cis}")
     print()
+
+
+def export_json_multi(
+    results: list[tuple[str, list[Finding]]],
+    severity_filter: Optional[str] = None,
+) -> str:
+    """Return one valid JSON document for several scanned files."""
+    files = [json.loads(export_json(path, findings, severity_filter))
+             for path, findings in results]
+    return json.dumps({"files": files}, indent=2, ensure_ascii=False)

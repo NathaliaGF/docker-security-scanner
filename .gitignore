@@ -6,3 +6,7 @@ __pycache__/
 dist/
 build/
 .env
+.venv/
+venv/
+.ruff_cache/
+results.sarif

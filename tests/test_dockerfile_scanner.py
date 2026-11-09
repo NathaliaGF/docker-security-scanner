@@ -3,11 +3,11 @@ Unit tests for the Dockerfile scanner — one test class per DF rule.
 """
 
 import os
+
 import pytest
 
-from scanner.dockerfile_scanner import scan_dockerfile
-from scanner import Finding
-
+from dockerscan import Finding
+from dockerscan.dockerfile_scanner import scan_dockerfile
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -356,3 +356,28 @@ class TestInsecureSample:
         findings = scan_dockerfile(sample)
         high = [f for f in findings if f.severity == "HIGH"]
         assert high == [], f"Unexpected HIGH findings: {[f.rule_id for f in high]}"
+
+
+# ── Regression: false positives found while building the AI fix validator ────
+
+class TestVariableReferencesAreNotSecrets:
+    @pytest.mark.parametrize("line", [
+        "ENV DB_PASSWORD=${DB_PASSWORD}",
+        "ENV DB_PASSWORD=$DB_PASSWORD",
+        "ARG API_TOKEN=${API_TOKEN:-}",
+        "ENV DB_PASSWORD $DB_PASSWORD",
+    ])
+    def test_reference_not_flagged(self, tmp_path, line):
+        content = f"FROM python:3.12\n{line}\nUSER app\n"
+        assert not _has(scan_dockerfile(_write(tmp_path, content)), "DF003")
+
+    def test_literal_still_flagged(self, tmp_path):
+        content = "FROM python:3.12\nENV DB_PASSWORD=hunter2\nUSER app\n"
+        assert _has(scan_dockerfile(_write(tmp_path, content)), "DF003")
+
+
+class TestDF005HonoursDockerignore:
+    def test_not_flagged_with_dockerignore(self, tmp_path):
+        (tmp_path / ".dockerignore").write_text(".git\n")
+        content = "FROM python:3.12\nCOPY . .\nUSER app\n"
+        assert not _has(scan_dockerfile(_write(tmp_path, content)), "DF005")

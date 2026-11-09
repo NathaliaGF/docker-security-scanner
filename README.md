@@ -1,203 +1,149 @@
-# Docker Security Scanner
+# dockerscan
 
-![Python](https://img.shields.io/badge/Python-3.10%2B-blue?logo=python&logoColor=white)
-![Security Tool](https://img.shields.io/badge/Segurança-Ferramenta-red?logo=shield&logoColor=white)
-![Licença](https://img.shields.io/badge/Licença-MIT-green?logoColor=white)
-![Testes](https://img.shields.io/badge/Testes-105%20passando-brightgreen)
+[![CI](https://github.com/NathaliaGF/docker-security-scanner/actions/workflows/ci.yml/badge.svg)](https://github.com/NathaliaGF/docker-security-scanner/actions/workflows/ci.yml)
+![Python](https://img.shields.io/badge/python-3.10%2B-blue?logo=python&logoColor=white)
+![License](https://img.shields.io/badge/license-MIT-green)
 
-Uma ferramenta CLI leve que analisa estaticamente arquivos `docker-compose.yml` e `Dockerfile` em busca de más práticas de segurança, gerando relatórios coloridos no terminal ou saída JSON para integração com pipelines.
+**English** · [Português](README.pt-BR.md)
 
-O Docker Security Scanner implementa 20 regras (10 por tipo de arquivo) cobrindo os erros de segurança mais impactantes em containers: rodar como root, colocar segredos dentro da imagem, expor portas privilegiadas, montar o socket do Docker, usar imagens base sem suporte, entre outros. Não precisa de Docker rodando, não acessa a internet e não usa frameworks pesados — só Python e duas dependências pequenas.
+A static security scanner for `Dockerfile` and `docker-compose.yml` files. A deterministic engine decides what is a finding. An optional AI layer (Claude) **explains** each one and drafts a **fix that is re-scanned before it is accepted**. It runs in your terminal, in CI (SARIF for GitHub code scanning, PR comments) and as an MCP tool for AI assistants.
 
----
+![dockerscan demo](docs/demo.svg)
 
-## Instalação
+## Why it is built this way
 
-```bash
-git clone https://github.com/NathaliaGF/docker-security-scanner.git
-cd docker-security-scanner
-pip install -r requirements.txt
-```
+LLMs are good at explaining a risk and drafting a patch, and bad at being the source of truth: they miss real issues and invent fake ones. So the design splits the work:
 
-Requer Python 3.10 ou superior.
+| Layer | Job | Deterministic |
+|---|---|---|
+| **Rule engine** (20 rules, CIS-mapped) | Decides what is a finding, where, and how severe | yes |
+| **`--explain`** | Explains the risk *in your file* and a realistic attack | no |
+| **`--fix`** | Drafts a corrected file, then **re-scans it**. Accepted only if findings go down and no new rule fires | validated |
+| **MCP server** | Lets any AI assistant call the scanner instead of guessing | yes |
 
----
+The model never overrides the scanner. A fix that makes things worse is rejected and the file is left untouched.
 
-## Como usar
-
-### Analisar um arquivo específico
+## Install
 
 ```bash
-python main.py --file docker-compose.yml
-python main.py --file caminho/para/Dockerfile
+pipx install "git+https://github.com/NathaliaGF/docker-security-scanner.git"            # core
+pipx install "dockerscan[ai,mcp] @ git+https://github.com/NathaliaGF/docker-security-scanner.git"   # + AI and MCP
+# or with Docker
+docker build -t dockerscan . && docker run --rm -v "$PWD:/scan:ro" dockerscan --dir .
 ```
 
-### Analisar um diretório inteiro (recursivo)
+## Usage
 
 ```bash
-python main.py --dir ./meu-projeto
+dockerscan --file docker-compose.yml
+dockerscan --dir ./my-project --severity HIGH          # recursive, skips .git / node_modules / venvs
+dockerscan --dir . --output json                       # one valid JSON document, even for many files
+dockerscan --dir . --output sarif > results.sarif      # GitHub code scanning
+dockerscan --dir . --output markdown                   # PR comments, job summaries
+dockerscan --list-rules
 ```
 
-### Filtrar por severidade
+Exit code is `1` when a finding at or above `--fail-on` exists (default `HIGH`; use `--fail-on MEDIUM` or `none`). `2` means a usage or file error.
+
+### AI features (optional)
 
 ```bash
-# Exibir apenas achados críticos
-python main.py --file docker-compose.yml --severity HIGH
+export ANTHROPIC_API_KEY=...
+dockerscan --file Dockerfile --explain --lang en       # or --lang pt
+dockerscan --file Dockerfile --fix                     # shows a validated diff
+dockerscan --file Dockerfile --fix --apply             # writes it
 ```
 
-### Exportar como JSON (para pipelines, dashboards, etc.)
+How `--fix` stays honest:
+
+1. The scanner finds the issues, the model gets the file plus those findings.
+2. The proposed file is scanned again. If issues remain, they are sent back for one more attempt.
+3. The fix is accepted only if **findings decreased, no new rule fired, and no redaction marker leaked into the output**. Otherwise the file is not touched.
+
+Privacy: the file content is sent to the Anthropic API. Values of credential-looking variables (`PASSWORD`, `TOKEN`, `SECRET`, `API_KEY`…) are masked as `<REDACTED>` before leaving your machine. File content is treated as untrusted data in the prompt. Pick a model with `--model` or `DOCKERSCAN_MODEL`.
+
+Limits: the model can only fix what the 20 rules detect, and some findings need a separate file (for example a `.dockerignore`). It leaves a `# TODO` there instead of guessing.
+
+### MCP server
 
 ```bash
-python main.py --file docker-compose.yml --output json
-python main.py --dir ./meu-projeto --output json > relatorio.json
+dockerscan-mcp      # stdio server with tools: scan_file, scan_text, list_rules, get_rule
 ```
-
-### Integração com CI/CD
-
-O scanner encerra com código `1` quando há qualquer achado **HIGH**, e `0` caso contrário. Isso permite bloquear pipelines em problemas críticos:
-
-```yaml
-# Exemplo GitHub Actions
-- name: Docker Security Scan
-  run: python main.py --dir . --severity HIGH
-```
-
----
-
-## Checks implementados
-
-### docker-compose.yml
-
-| ID     | Severidade | Descrição                                                        |
-|--------|------------|------------------------------------------------------------------|
-| DC001  | HIGH       | Container rodando como root (sem `user:` ou `user: root`)        |
-| DC002  | HIGH       | Porta privilegiada exposta no host (< 1024)                      |
-| DC003  | MEDIUM     | Imagem usando tag `latest` ou sem tag                            |
-| DC004  | HIGH       | Volume sensível montado (`/`, `/etc`, socket do Docker)          |
-| DC005  | MEDIUM     | Segredo em texto plano em variável de ambiente                   |
-| DC006  | LOW        | `restart: always` sem health check definido                      |
-| DC007  | HIGH       | `privileged: true` habilitado                                    |
-| DC008  | MEDIUM     | Modo de rede host (`network_mode: host`)                         |
-| DC009  | LOW        | Sem limites de CPU ou memória definidos                          |
-| DC010  | MEDIUM     | Capabilities Linux perigosas adicionadas (`SYS_ADMIN`, `ALL`…)  |
-
-### Dockerfile
-
-| ID     | Severidade | Descrição                                                        |
-|--------|------------|------------------------------------------------------------------|
-| DF001  | HIGH       | `USER root` explícito ou ausência de instrução `USER`            |
-| DF002  | MEDIUM     | Imagem base usando tag `latest` ou sem tag                       |
-| DF003  | HIGH       | Credenciais hardcoded em `ENV` ou `ARG`                          |
-| DF004  | MEDIUM     | `apt-get install` sem `--no-install-recommends`                  |
-| DF005  | LOW        | `COPY . .` sem arquivo `.dockerignore`                           |
-| DF006  | MEDIUM     | Script remoto executado via pipe (`curl \| bash`)                 |
-| DF007  | LOW        | Mais de 3 instruções `RUN` consecutivas                          |
-| DF008  | MEDIUM     | Porta sensível exposta via `EXPOSE` (22, 23, 3389)               |
-| DF009  | HIGH       | Chave privada ou certificado TLS copiado para dentro da imagem   |
-| DF010  | LOW        | Imagem base sem suporte (`ubuntu:16.04`, `debian:8`…)            |
-
----
-
-## Score de segurança
-
-Cada análise gera uma pontuação de **0 a 100**:
-
-| Severidade | Dedução por achado |
-|------------|--------------------|
-| HIGH       | −15 pontos         |
-| MEDIUM     | −7 pontos          |
-| LOW        | −2 pontos          |
-
-O score é calculado sobre a lista completa de achados, independente do filtro `--severity` aplicado na exibição.
-
----
-
-## Exemplo de saída
-
-```
-╔══════════════════════════════════════════════════════════╗
-║           DOCKER SECURITY SCANNER — RELATÓRIO            ║
-╚══════════════════════════════════════════════════════════╝
-
-📄 Arquivo: tests/samples/docker-compose.insecure.yml
-──────────────────────────────────────────────────────────
-
-🔴 [HIGH  ] DC007 — `privileged: true` habilitado
-            Serviço: api
-            Linha:   19
-            Detalhe: Um container privilegiado tem acesso total ao kernel do host,
-                     todos os dispositivos e namespaces — equivalente a root no host.
-            Fix:     Remova `privileged: true` e use `cap_add` apenas com as
-                     capabilities estritamente necessárias.
-
-🟡 [MEDIUM] DC003 — Imagem com tag `latest` (ou sem tag)
-            Serviço: db
-            Linha:   26
-            Detalhe: Usar `latest` torna as builds não reproduzíveis: atualizações
-                     upstream podem introduzir breaking changes sem aviso.
-            Fix:     Fixe uma versão específica, ex: `postgres:16.2`.
-
-🔵 [LOW   ] DC009 — Sem limites de CPU ou memória
-            Serviço: api
-            Linha:   8
-            Detalhe: Sem `mem_limit`/`cpus`, um container com problema pode
-                     esgotar todos os recursos do host (DoS).
-            Fix:     Defina `mem_limit` e `cpus` no serviço.
-
-──────────────────────────────────────────────────────────
-RESUMO: 14 achados  |  🔴 HIGH: 5  |  🟡 MEDIUM: 6  |  🔵 LOW: 3
-Score de segurança: 0/100
-──────────────────────────────────────────────────────────
-```
-
-### Saída JSON (`--output json`)
 
 ```json
-{
-  "file": "docker-compose.yml",
-  "score": 62,
-  "total_findings": 3,
-  "findings": [
-    {
-      "id": "DC007",
-      "severity": "HIGH",
-      "description": "`privileged: true` habilitado",
-      "detail": "Um container privilegiado tem acesso total ao kernel do host...",
-      "fix": "Remova `privileged: true` e use `cap_add` apenas com as capabilities necessárias.",
-      "service": "api",
-      "line": 12
-    }
-  ],
-  "summary": {
-    "HIGH": 1,
-    "MEDIUM": 1,
-    "LOW": 1
-  }
-}
+{ "mcpServers": { "dockerscan": { "command": "dockerscan-mcp" } } }
 ```
 
----
+Ask your assistant to "scan this compose file and fix what you find" and it works from real findings.
 
-## Rodando os testes
+### GitHub Action
+
+```yaml
+name: Docker security
+on: pull_request
+permissions:
+  contents: read
+  security-events: write   # SARIF upload
+  pull-requests: write     # PR comment
+jobs:
+  dockerscan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: NathaliaGF/docker-security-scanner@main
+        with:
+          path: .
+          fail-on: HIGH
+          pr-comment: "true"
+```
+
+Findings show up in the **Security → Code scanning** tab, as a job summary, and as one updating comment on the pull request. This repository scans its own `Dockerfile` with the same action in CI.
+
+## Rules
+
+Each rule that matches a [CIS Docker Benchmark](https://www.cisecurity.org/benchmark/docker) recommendation carries its reference in the report.
+
+| ID | Sev | Check | CIS |
+|---|---|---|---|
+| DC001 | HIGH | Container runs as root | 4.1 |
+| DC002 | HIGH | Privileged host port (< 1024) | 5.7 |
+| DC003 | MEDIUM | `latest` tag or no tag | |
+| DC004 | HIGH | Sensitive host path or Docker socket mounted | 5.5 |
+| DC005 | MEDIUM | Plaintext secret in `environment` | |
+| DC006 | LOW | `restart: always` without healthcheck | 4.6 |
+| DC007 | HIGH | `privileged: true` | 5.4 |
+| DC008 | MEDIUM | `network_mode: host` | 5.9 |
+| DC009 | LOW | No CPU / memory limits | 5.10 |
+| DC010 | MEDIUM | Dangerous capabilities (`SYS_ADMIN`, `ALL`…) | 5.3 |
+| DF001 | HIGH | `USER root` or no `USER` | 4.1 |
+| DF002 | MEDIUM | Base image `latest` or untagged | |
+| DF003 | HIGH | Hardcoded credential in `ENV` / `ARG` (variable references are fine) | 4.10 |
+| DF004 | MEDIUM | `apt-get install` without `--no-install-recommends` | |
+| DF005 | LOW | `COPY . .` without a `.dockerignore` | |
+| DF006 | MEDIUM | `curl … \| bash` | |
+| DF007 | LOW | More than 3 consecutive `RUN` | |
+| DF008 | MEDIUM | SSH / Telnet / RDP port exposed | |
+| DF009 | HIGH | Private key or certificate copied into the image | |
+| DF010 | LOW | End-of-life base image | |
+
+Score: 100 minus 15 per HIGH, 7 per MEDIUM, 2 per LOW (floor 0), always computed on all findings regardless of `--severity`.
+
+## Development
 
 ```bash
-pytest tests/ -v
+pip install -e ".[dev]"
+ruff check . && pytest -q
+python tools/make_demo_svg.py      # regenerate docs/demo.svg from a real run
 ```
 
-A suíte contém **105 testes** — pelo menos um caso positivo e um negativo por check, mais testes de integração contra os arquivos de exemplo em `tests/samples/`.
-
----
+The suite (143 tests) covers every rule with positive and negative cases, the CLI, SARIF/Markdown output, and the AI layer against a fake client (no network or key needed).
 
 ## Roadmap
 
-- **Scan de imagens remotas** — buscar metadados via Docker API e analisar o histórico de camadas em busca de segredos e imagens base vulneráveis.
-- **Integrações CI/CD** — action nativa para GitHub Actions e template para GitLab CI; saída no formato SARIF para o GitHub Code Scanning.
-- **Suporte a manifests Kubernetes** — estender os checks para `Pod`, `Deployment` e `DaemonSet` (regras equivalentes para `securityContext`, `hostNetwork`, `privileged`, etc.).
-- **Motor de regras customizadas** — permitir que times definam regras específicas do projeto em YAML e as carreguem em tempo de execução.
-- **Integração com SBOM** — cruzar as camadas da imagem base com bancos de CVEs (Trivy, Grype) para incluir contagem de vulnerabilidades junto aos achados de configuração.
+- Kubernetes manifests (`securityContext`, `hostNetwork`, `privileged`…)
+- Custom rules in YAML and inline `# dockerscan:ignore` suppressions
+- Image layer and SBOM scanning (Trivy / Grype) next to configuration findings
 
----
+## License
 
-## Licença
-
-MIT — consulte o arquivo [LICENSE](LICENSE) para detalhes.
+MIT, see [LICENSE](LICENSE).

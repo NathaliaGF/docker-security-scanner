@@ -40,10 +40,10 @@ def scan_compose(file_path: str) -> list[Finding]:
         raise RuntimeError("pyyaml is required. Run: pip install pyyaml")
 
     try:
-        with open(file_path, "r", encoding="utf-8") as fh:
+        with open(file_path, encoding="utf-8") as fh:
             raw = fh.read()
     except FileNotFoundError:
-        raise FileNotFoundError(f"File not found: {file_path}")
+        raise FileNotFoundError(f"File not found: {file_path}") from None
 
     try:
         data = yaml.safe_load(raw)
