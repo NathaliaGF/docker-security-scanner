@@ -2,6 +2,7 @@
 Scans Dockerfiles for security misconfigurations (DF001–DF010).
 """
 
+import os
 import re
 from typing import Optional
 
@@ -15,6 +16,9 @@ _CRED_RE = re.compile(
     r"(PASSWORD|PASSWD|SECRET|TOKEN|API_KEY|PRIVATE_KEY|CREDENTIALS)",
     re.IGNORECASE,
 )
+
+# A value that is just a variable reference carries no secret itself.
+_VAR_REF_RE = re.compile(r"^\$(\{[A-Za-z_][A-Za-z0-9_]*(:?[-?][^}]*)?\}|[A-Za-z_][A-Za-z0-9_]*)$")
 
 # Private key / certificate file extensions or names.
 _PRIVKEY_RE = re.compile(
@@ -55,10 +59,15 @@ def scan_dockerfile(file_path: str) -> list[Finding]:
         FileNotFoundError: if the file does not exist.
     """
     try:
-        with open(file_path, "r", encoding="utf-8") as fh:
+        with open(file_path, encoding="utf-8") as fh:
             lines = fh.readlines()
     except FileNotFoundError:
-        raise FileNotFoundError(f"File not found: {file_path}")
+        raise FileNotFoundError(f"File not found: {file_path}") from None
+
+    # DF005 only applies when the build context is not filtered by a .dockerignore.
+    has_dockerignore = os.path.isfile(
+        os.path.join(os.path.dirname(os.path.abspath(file_path)), ".dockerignore")
+    )
 
     findings: list[Finding] = []
     has_user = False          # tracks whether any USER instruction was seen
@@ -118,7 +127,8 @@ def scan_dockerfile(file_path: str) -> list[Finding]:
 
         # ── COPY ─────────────────────────────────────────────────────────────
         elif upper.startswith("COPY "):
-            findings.extend(_check_df005(stripped, lineno))
+            if not has_dockerignore:
+                findings.extend(_check_df005(stripped, lineno))
             findings.extend(_check_df009(stripped, lineno))
             consecutive_runs = 0
             df007_reported = False
@@ -192,6 +202,11 @@ def _check_df002(line: str, lineno: int) -> list[Finding]:
     return []
 
 
+def _is_reference(value: str) -> bool:
+    """True when *value* only points at another variable (`${DB_PASS}`, `$TOKEN`)."""
+    return bool(_VAR_REF_RE.match(value.strip().strip("\"'")))
+
+
 def _check_df003(line: str, lineno: int) -> list[Finding]:
     """DF003 — Hardcoded credential in ENV or ARG."""
     rest = line.split(None, 1)[1] if len(line.split(None, 1)) > 1 else ""
@@ -201,12 +216,12 @@ def _check_df003(line: str, lineno: int) -> list[Finding]:
     # declarations without a default).
     if "=" in rest:
         _, _, value = rest.partition("=")
-        if value.strip():
+        if value.strip() and not _is_reference(value):
             return [_make("DF003", lineno)]
     else:
         # ENV KEY VALUE (space-separated) — two tokens after ENV = key + value.
         tokens = rest.strip().split()
-        if len(tokens) >= 2 and _CRED_RE.search(tokens[0]):
+        if len(tokens) >= 2 and _CRED_RE.search(tokens[0]) and not _is_reference(tokens[1]):
             return [_make("DF003", lineno)]
     return []
 

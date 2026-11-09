@@ -6,9 +6,8 @@ and asserts whether the expected finding is (or is not) produced.
 
 import pytest
 
-from scanner.compose_scanner import scan_compose
-from scanner import Finding
-
+from dockerscan import Finding
+from dockerscan.compose_scanner import scan_compose
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 

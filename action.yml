@@ -1,0 +1,88 @@
+name: "dockerscan"
+description: "Scan Dockerfiles and docker-compose files for security issues. Uploads SARIF to GitHub code scanning and can comment on pull requests."
+author: "Nathalia Gomes"
+branding:
+  icon: shield
+  color: blue
+
+inputs:
+  path:
+    description: "File or directory to scan."
+    default: "."
+  severity:
+    description: "Only report findings at this severity (HIGH, MEDIUM or LOW). Empty = all."
+    default: ""
+  fail-on:
+    description: "Fail the job at this severity or above (HIGH, MEDIUM, LOW, none)."
+    default: "HIGH"
+  upload-sarif:
+    description: "Upload results to GitHub code scanning (needs security-events: write)."
+    default: "true"
+  pr-comment:
+    description: "Post the Markdown report as a pull request comment (needs pull-requests: write)."
+    default: "false"
+  version:
+    description: "dockerscan version spec to install."
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-python@v5
+      with:
+        python-version: "3.12"
+
+    - name: Install dockerscan
+      shell: bash
+      run: pip install "${{ github.action_path }}"
+
+    - name: Scan
+      id: scan
+      shell: bash
+      env:
+        SCAN_PATH: ${{ inputs.path }}
+        SEVERITY: ${{ inputs.severity }}
+        FAIL_ON: ${{ inputs.fail-on }}
+      run: |
+        target=(--dir "$SCAN_PATH")
+        [ -f "$SCAN_PATH" ] && target=(--file "$SCAN_PATH")
+        sev=()
+        [ -n "$SEVERITY" ] && sev=(--severity "$SEVERITY")
+        dockerscan "${target[@]}" "${sev[@]}" --output sarif --fail-on none > dockerscan.sarif
+        dockerscan "${target[@]}" "${sev[@]}" --output markdown --fail-on none > dockerscan.md
+        cat dockerscan.md >> "$GITHUB_STEP_SUMMARY"
+        code=0
+        dockerscan "${target[@]}" "${sev[@]}" --output json --fail-on "$FAIL_ON" > /dev/null || code=$?
+        echo "exit-code=$code" >> "$GITHUB_OUTPUT"
+
+    - name: Upload SARIF
+      if: inputs.upload-sarif == 'true'
+      uses: github/codeql-action/upload-sarif@v3
+      with:
+        sarif_file: dockerscan.sarif
+        category: dockerscan
+
+    - name: Comment on pull request
+      if: inputs.pr-comment == 'true' && github.event_name == 'pull_request'
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const fs = require('fs');
+          const marker = '<!-- dockerscan -->';
+          const body = marker + '\n' + fs.readFileSync('dockerscan.md', 'utf8');
+          const { owner, repo } = context.repo;
+          const issue_number = context.issue.number;
+          const { data: comments } = await github.rest.issues.listComments({ owner, repo, issue_number });
+          const mine = comments.find(c => c.body && c.body.startsWith(marker));
+          if (mine) {
+            await github.rest.issues.updateComment({ owner, repo, comment_id: mine.id, body });
+          } else {
+            await github.rest.issues.createComment({ owner, repo, issue_number, body });
+          }
+
+    - name: Enforce threshold
+      if: steps.scan.outputs.exit-code != '0'
+      shell: bash
+      run: |
+        echo "::error::dockerscan found findings at or above the fail-on threshold."
+        exit 1
