@@ -21,6 +21,14 @@ _SECRET_NAME_RE = re.compile(
     re.IGNORECASE,
 )
 
+# `NAME_FILE` / `NAME__FILE` is the convention for "read the value from this file" (Docker secrets,
+# Postgres, Grafana...). The variable holds a path, not the secret.
+_FILE_SUFFIX_RE = re.compile(r"_FILE$", re.IGNORECASE)
+
+# A value that is only a reference to a variable (`$VAR`, `${VAR}`, `${VAR:?message}`). The secret
+# is not in the file. A reference with a hard-coded default (`${VAR:-hunter2}`) is still reported.
+_VAR_REFERENCE_RE = re.compile(r"^\$(?:[A-Za-z_]\w*|\{[A-Za-z_]\w*(?::?\?[^}]*)?\})$")
+
 # Capabilities that grant near-root access.
 _DANGEROUS_CAPS = {"ALL", "SYS_ADMIN", "NET_ADMIN", "SYS_PTRACE", "SYS_MODULE"}
 
@@ -165,7 +173,10 @@ def _check_dc005(name: str, cfg: dict, lines: list[str]) -> list[Finding]:
         if "=" not in entry_str:
             continue
         key, _, value = entry_str.partition("=")
-        if _SECRET_NAME_RE.search(key) and value.strip():
+        value = value.strip()
+        if _FILE_SUFFIX_RE.search(key.strip()) or _VAR_REFERENCE_RE.match(value):
+            continue
+        if _SECRET_NAME_RE.search(key) and value:
             return [_make("DC005", name, _find_line(lines, key.strip()))]
     return []
 
