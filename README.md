@@ -138,6 +138,17 @@ python tools/make_demo_svg.py      # regenerate docs/demo.svg from a real run
 
 The suite (143 tests) covers every rule with positive and negative cases, the CLI, SARIF/Markdown output, and the AI layer against a fake client (no network or key needed).
 
+## Limitations
+
+dockerscan is a **static configuration scanner**. It reads `Dockerfile` and `docker-compose.yml` files; it never builds or runs anything.
+
+- **Not covered:** vulnerabilities inside image layers or installed packages (use Trivy or Grype for that), runtime behaviour, secrets baked into image layers, Kubernetes manifests, and Compose files assembled through `extends` or heavy variable interpolation.
+- **Coverage:** the 20 rules cover the most common CIS Docker Benchmark misconfigurations. A clean report does not mean a hardened deployment.
+- **False positives and negatives:** rules are pattern based. Some findings can be intentional (for example, mounting the Docker socket in a CI agent). Review each finding before acting on it.
+- **AI features:** explanations and suggested fixes are optional and can be wrong. A suggested fix is only accepted if re-scanning the changed file no longer reports the finding and introduces no new ones, but you should still review the diff.
+- **Scope:** run it only on files you own or are authorised to assess.
+
+
 ## Roadmap
 
 - Kubernetes manifests (`securityContext`, `hostNetwork`, `privileged`…)
