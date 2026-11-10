@@ -167,6 +167,34 @@ class TestDC005:
         )
         assert not _has(scan_compose(_write(tmp_path, content)), "DC005")
 
+    @pytest.mark.parametrize("entry", [
+        "POSTGRES_PASSWORD_FILE=/run/secrets/db_password",
+        "GF_SECURITY_ADMIN_PASSWORD__FILE=/run/secrets/grafana_admin_password",
+        "API_TOKEN=${API_TOKEN}",
+        "API_TOKEN=$API_TOKEN",
+        "DB_PASSWORD=${DB_PASSWORD:?set DB_PASSWORD}",
+    ])
+    def test_file_and_variable_references_are_not_plaintext(self, tmp_path, entry):
+        content = (
+            "version: '3'\nservices:\n  api:\n    image: python:3.12\n"
+            f"    environment:\n      - {entry}\n"
+        )
+        assert not _has(scan_compose(_write(tmp_path, content)), "DC005")
+
+    def test_mapping_syntax_file_variable_passes(self, tmp_path):
+        content = (
+            "services:\n  db:\n    image: postgres:16\n"
+            "    environment:\n      POSTGRES_PASSWORD_FILE: /run/secrets/db_password\n"
+        )
+        assert not _has(scan_compose(_write(tmp_path, content)), "DC005")
+
+    def test_reference_with_hardcoded_default_still_triggers(self, tmp_path):
+        content = (
+            "services:\n  db:\n    image: postgres:16\n"
+            "    environment:\n      - DB_PASSWORD=${DB_PASSWORD:-hunter2}\n"
+        )
+        assert _has(scan_compose(_write(tmp_path, content)), "DC005")
+
     def test_finding_severity(self, tmp_path):
         content = (
             "version: '3'\nservices:\n  api:\n    image: python:3.12\n"
